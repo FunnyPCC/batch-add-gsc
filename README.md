@@ -1,53 +1,57 @@
 # batch-add-gsc
 
-Claude Code plugin for batch-adding domains to Google Search Console.
+批量添加域名到 Google Search Console 的 Claude Code 插件。
 
-Automates the entire flow: get DNS verification tokens → write Cloudflare TXT records → verify domain ownership → register as GSC properties.
+自动化完整流程：获取 DNS 验证 token → 写入 Cloudflare TXT 记录 → 验证域名所有权 → 注册为 GSC 属性。
 
-## Install
+## 安装
 
 ```bash
 claude plugin add --from github:FunnyPCC/batch-add-gsc
 ```
 
-## Prerequisites
+## 前置条件
 
-1. **Google Cloud project** with Search Console API and Site Verification API enabled
-2. **OAuth 2.0 credentials** (Desktop type) — JSON file or Client ID + Secret
-3. **Cloudflare account** with API access for your domains
-4. **[uv](https://docs.astral.sh/uv/)** — Python package runner (auto-installs dependencies)
+1. **Google Cloud 项目** — 启用 Search Console API 和 Site Verification API
+2. **OAuth 2.0 客户端凭据**（Desktop 类型）— JSON 文件或 Client ID + Client Secret
+3. **Cloudflare 账号** — 拥有域名的 API 访问权限
+4. **[uv](https://docs.astral.sh/uv/)** — Python 包运行器（自动安装依赖）
 
-## Usage
+## 使用
 
-Once installed, just tell Claude Code:
+安装后，直接告诉 Claude Code：
 
 > "帮我批量添加域名到 Google Search Console"
 
-or
+或
 
 > "batch add my domains to GSC"
 
-The skill will guide you through:
-1. Collecting credentials (supports 1Password, env vars, or manual input)
-2. Creating a domain list file
-3. Generating and configuring the script
-4. Running the batch process
+插件会引导你完成：
+1. 收集凭据（支持 1Password、环境变量、手动输入）
+2. 创建域名列表文件
+3. 生成并配置脚本
+4. 运行批量处理
 
-## Credentials
+## 凭据来源
 
-The script supports multiple credential sources:
+脚本支持多种凭据获取方式：
 
-| Source | Google OAuth | Cloudflare |
-|--------|-------------|------------|
+| 来源 | Google OAuth | Cloudflare |
+|------|-------------|------------|
 | 1Password `op` CLI | client_id + client_secret + refresh_token | username + API key |
-| Environment variables | — | CF_EMAIL + CF_API_KEY |
-| JSON file | OAuth JSON from Google Cloud Console | — |
-| Direct input | Client ID + Client Secret | — |
+| 环境变量 | — | CF_EMAIL + CF_API_KEY |
+| JSON 文件 | Google Cloud Console 导出的 OAuth JSON | — |
+| 手动输入 | Client ID + Client Secret | — |
 
-## License
+## 跨平台支持
+
+本仓库包含 `AGENTS.md`，可供 Codex 等其他 AI 编程平台使用相同的工作流。
+
+## 许可证
 
 MIT
 
 ---
 
-*Created by @FunnyPCC & Claude Code*
+*Created by @FunnyPC & Claude Code*
