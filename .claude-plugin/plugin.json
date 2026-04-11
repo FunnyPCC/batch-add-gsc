@@ -1,0 +1,12 @@
+{
+  "name": "batch-add-gsc",
+  "version": "1.0.0",
+  "description": "Batch add domains to Google Search Console with automated DNS TXT verification via Cloudflare",
+  "author": {
+    "name": "FunnyPCCCC",
+    "url": "https://github.com/FunnyPCCCC"
+  },
+  "repository": "https://github.com/FunnyPCCCC/batch-add-gsc",
+  "license": "MIT",
+  "keywords": ["google-search-console", "gsc", "domain-verification", "cloudflare", "dns", "batch", "seo"]
+}
