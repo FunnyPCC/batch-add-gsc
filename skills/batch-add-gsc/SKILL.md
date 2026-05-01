@@ -29,20 +29,34 @@ description: Use when the user wants to batch-add domains to Google Search Conso
 
 ## 操作流程
 
-### 第一步：收集凭据（引导用户提供）
+### 第一步：优先确认 1Password 凭据
 
-禁止硬编码密钥，始终向用户询问或从密钥管理器获取。
+禁止硬编码密钥，始终优先从 1Password 或其他密钥管理器获取。
 
-向用户确认以下信息：
+默认按这个顺序处理 Google 授权：
+
+1. **先检查 1Password 里的 Google OAuth item**
+   - item 需包含：`client_id`、`client_secret`、`refresh_token`
+   - 如果这三个字段齐全，默认直接用它，不要先向用户索要 JSON 或明文 Client ID/Secret
+
+2. **如果 1Password 中的授权失效**
+   - 引导用户在本地终端运行脚本并打开浏览器重新授权
+   - 授权成功后，把最新 `refresh_token` 同步回 1Password，并在本地保留 `.gsc_token.json` 作为缓存备份
+
+3. **只有在 1Password 里还没有 Google OAuth 凭据时**，才退回到初始化收集：
+   - 方式 A：OAuth JSON 文件（从 Google Cloud Console 下载），路径是？
+   - 方式 B：直接提供 Client ID 和 Client Secret
+   - 然后先完成一次浏览器授权，再把生成的 `client_id`、`client_secret`、`refresh_token` 存入 1Password
+
+还需要向用户确认以下信息：
 
 ```
 需要准备以下信息：
 
-1. **Google OAuth 凭据**（三选一）：
-   - 方式 A：OAuth JSON 文件（从 Google Cloud Console 下载），路径是？
-   - 方式 B：直接提供 Client ID 和 Client Secret
-   - 方式 C：已存入 1Password（item 中需包含 client_id、client_secret、refresh_token 三个字段）
-     注意：refresh_token 需要先用方式 A 或 B 完成一次浏览器授权后，从生成的 .gsc_token.json 中提取
+1. **Google OAuth 凭据**：
+   - 优先：是否已存入 1Password？item 是哪个？
+   - 如果已存入，我会先走 1Password；只有授权失效时才引导你去浏览器重新授权
+   - 如果未存入，才需要补 OAuth JSON 或 Client ID + Client Secret 做首次初始化
 
 2. **Cloudflare 凭据**：
    - 账号邮箱
@@ -84,11 +98,11 @@ op item get "<item-id>" --vault "<vault>" --account "<account_id>" --fields "API
 
 从本 skill 的 `scripts/batch_add_gsc.py` 模板复制到用户工作区，配置以下变量：
 
-- `OAUTH_JSON` — OAuth 凭据文件路径（方式 A）
-- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` — 直接填写（方式 B）
-- `OP_GOOGLE_ITEM` — 1Password item，需包含 `client_id`、`client_secret`、`refresh_token` 三个字段（方式 C）
+- `OP_GOOGLE_ITEM` — 首选；1Password item，需包含 `client_id`、`client_secret`、`refresh_token`
+- `TOKEN_FILE` — 本地 OAuth 缓存路径（默认 `.gsc_token.json`），作为浏览器授权后的备份
+- `OAUTH_JSON` — 仅在首次初始化且 1Password 中还没有 Google OAuth 凭据时使用
+- `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` — 仅在首次初始化且没有 JSON 文件时使用
 - `DOMAIN_FILE` — 域名列表路径
-- `TOKEN_FILE` — OAuth token 缓存路径（默认 `.gsc_token.json`），Refresh Token 会持久化保存以支持长期运行
 - Cloudflare 凭据 — 根据用户选择配置 `op` CLI / 环境变量 / 直接赋值
 
 脚本使用 `uv run` + PEP 723 内联依赖声明，无需手动安装包。
@@ -101,7 +115,15 @@ op item get "<item-id>" --vault "<vault>" --account "<account_id>" --fields "API
 uv run batch_add_gsc.py
 ```
 
-首次运行会打开浏览器进行 Google OAuth 授权，授权后 token 自动缓存，后续运行不再弹窗。
+默认会先尝试使用 1Password 中已有的 Google OAuth 授权；只有当授权失效、refresh_token 不可用，或用户明确要求重登时，才引导浏览器重新授权。
+
+如需强制重新走浏览器授权，可运行：
+
+```bash
+uv run batch_add_gsc.py --reauth
+```
+
+浏览器授权成功后，应把最新 token 同步回 1Password，并在本地缓存到 `.gsc_token.json`。
 
 **不要通过 Claude 的 Bash 工具运行长耗时脚本** — 用户看不到中间输出，会以为卡住了。
 
@@ -126,7 +148,7 @@ uv run batch_add_gsc.py
 | 域名找不到 Zone | 域名未添加到 Cloudflare，或 API Key 对应的账号不对 |
 | DNS 写入后验证失败 | 增加等待时间（改为 30s）；用 `dig TXT <domain>` 确认记录 |
 | 1Password 字段找不到 | 字段名区分大小写；先 `op item get` 查看完整 item |
-| 重新运行时 token 过期 | 删除 `.gsc_token.json` 重新授权 |
+| 重新运行时 token 过期 | 不要先索要新凭据；先引导用户走浏览器重新授权，并把最新 token 同步回 1Password |
 | 没有 `uv` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 
 ## 扩展其他 DNS 服务商

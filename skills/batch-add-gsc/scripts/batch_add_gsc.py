@@ -19,9 +19,12 @@ Flow per domain:
 
 Usage:
   uv run batch_add_gsc.py
+  uv run batch_add_gsc.py --reauth
 
 Credentials:
-  - Google OAuth: reads from OAUTH_JSON path (browser auth on first run, cached after)
+  - Google OAuth: prefer reading client_id/client_secret/refresh_token from 1Password
+  - If the stored Google authorization is invalid or expired, re-authorize in browser
+    and sync the latest refresh_token back to 1Password
   - Cloudflare: configure via get_cf_credentials() — supports 1Password op CLI,
     environment variables, or direct assignment
 """
@@ -133,65 +136,91 @@ def _build_oauth_flow():
     sys.exit(1)
 
 
-def _creds_from_1password():
-    """Build Credentials from 1Password stored refresh_token + client credentials."""
+def _op_base(item):
+    base = ["op", "item", "get", item, "--account", OP_ACCOUNT, "--reveal"]
+    if OP_VAULT:
+        base += ["--vault", OP_VAULT]
+    return base
+
+
+
+def _google_auth_fields_from_1password():
+    """Read Google OAuth client credentials and refresh_token from 1Password."""
     if not (OP_GOOGLE_ITEM and OP_ACCOUNT):
         return None
     print("  Reading Google OAuth credentials from 1Password...")
     try:
-        op_base = ["op", "item", "get", OP_GOOGLE_ITEM, "--account", OP_ACCOUNT, "--reveal"]
-        if OP_VAULT:
-            op_base += ["--vault", OP_VAULT]
+        op_base = _op_base(OP_GOOGLE_ITEM)
         client_id = subprocess.check_output(op_base + ["--fields", "client_id"], text=True).strip()
         client_secret = subprocess.check_output(op_base + ["--fields", "client_secret"], text=True).strip()
         refresh_token = subprocess.check_output(op_base + ["--fields", "refresh_token"], text=True).strip()
+        return client_id, client_secret, refresh_token
     except subprocess.CalledProcessError as e:
         print(f"  1Password error: {e}")
         return None
 
-    from google.auth.transport.requests import Request
-    creds = Credentials(
-        token=None,
-        refresh_token=refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=client_id,
-        client_secret=client_secret,
-        scopes=SCOPES,
-    )
+
+
+def _sync_refresh_token_to_1password(refresh_token):
+    """Try to update the latest refresh_token back into 1Password."""
+    if not (OP_GOOGLE_ITEM and OP_ACCOUNT and refresh_token):
+        return
     try:
-        creds.refresh(Request())
-    except Exception as e:
-        print(f"  Failed to refresh token from 1Password: {e}")
-        return None
-    return creds
+        subprocess.check_call(
+            ["op", "item", "edit", OP_GOOGLE_ITEM, f"refresh_token={refresh_token}", "--account", OP_ACCOUNT]
+            + (["--vault", OP_VAULT] if OP_VAULT else []),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        print("  Synced latest refresh_token back to 1Password")
+    except subprocess.CalledProcessError:
+        print("  Warning: failed to sync refresh_token back to 1Password; local cache still updated")
 
 
-def google_auth():
-    """Google OAuth 2.0 — tries cached token → 1Password → browser flow."""
+def google_auth(force_reauth=False):
+    """Google OAuth 2.0 — prefer 1Password, then re-authorize in browser if needed."""
+    from google.auth.transport.requests import Request
+
+    op_fields = _google_auth_fields_from_1password()
     creds = None
 
-    # 1) Try cached token file
-    if TOKEN_FILE.exists():
-        try:
-            creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-        except Exception:
-            pass
-
-    # 2) Try 1Password (refresh_token + client credentials)
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            from google.auth.transport.requests import Request
-            creds.refresh(Request())
-        else:
-            creds = _creds_from_1password()
-
-    # 3) Fall back to browser OAuth flow
-    if not creds or not creds.valid:
-        print("  Opening browser for Google authorization...")
+    if op_fields:
+        client_id, client_secret, refresh_token = op_fields
+        if not force_reauth:
+            creds = Credentials(
+                token=None,
+                refresh_token=refresh_token,
+                token_uri="https://oauth2.googleapis.com/token",
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=SCOPES,
+            )
+            try:
+                creds.refresh(Request())
+            except Exception as e:
+                print(f"  Google authorization in 1Password is invalid or expired: {e}")
+                creds = None
+        if force_reauth or not creds:
+            print("  Opening browser for Google re-authorization...")
+            flow = InstalledAppFlow.from_client_config(
+                {
+                    "installed": {
+                        "client_id": client_id,
+                        "client_secret": client_secret,
+                        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                        "redirect_uris": ["http://localhost"],
+                    }
+                },
+                SCOPES,
+            )
+            creds = flow.run_local_server(port=OAUTH_PORT, prompt="consent")
+            _sync_refresh_token_to_1password(creds.refresh_token)
+    else:
+        print("  No Google OAuth credentials in 1Password; falling back to local OAuth config...")
         flow = _build_oauth_flow()
-        creds = flow.run_local_server(port=OAUTH_PORT)
+        creds = flow.run_local_server(port=OAUTH_PORT, prompt="consent")
 
-    # Cache token for next run
     TOKEN_FILE.write_text(creds.to_json())
     print("  Google auth ready")
 
@@ -277,6 +306,8 @@ def add_to_search_console(sc_service, domain):
 
 
 def main():
+    force_reauth = "--reauth" in sys.argv
+
     # Validate config
     has_oauth = (
         OAUTH_JSON.exists()
@@ -304,7 +335,7 @@ def main():
     # Credentials
     print("[1/2] Getting credentials...")
     cf_email, cf_api_key = get_cf_credentials()
-    creds = google_auth()
+    creds = google_auth(force_reauth=force_reauth)
 
     # Build API services
     print("[2/2] Connecting to Google APIs...\n")
