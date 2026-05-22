@@ -145,6 +145,7 @@ uv run batch_add_gsc.py --reauth
 |------|----------|
 | OAuth 授权失败 / 403 | 检查 OAuth 同意屏幕是否已添加测试用户（自己的 Gmail） |
 | OAuth 浏览器没弹出 | 检查 8099 端口是否被占用，换个端口试试 |
+| 取 token 报 `INET_DOMAIN is invalid` | 域名列表写成了带 `https://` 的网址；脚本已自动清洗为纯域名（去 scheme/路径、转小写），无需手动改 |
 | 域名找不到 Zone | 域名未添加到 Cloudflare，或 API Key 对应的账号不对 |
 | DNS 写入后验证失败 | 增加等待时间（改为 30s）；用 `dig TXT <domain>` 确认记录 |
 | 1Password 字段找不到 | 字段名区分大小写；先 `op item get` 查看完整 item |

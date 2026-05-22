@@ -227,6 +227,21 @@ def google_auth(force_reauth=False):
     return creds
 
 
+def normalize_domain(raw):
+    """Reduce a raw line to a bare hostname for INET_DOMAIN.
+
+    Strips scheme (https://), any path/query, surrounding whitespace and
+    trailing dots, then lowercases. The Site Verification API rejects
+    'https://Example.com/' — it wants 'example.com'.
+    """
+    d = raw.strip()
+    if "://" in d:
+        d = d.split("://", 1)[1]
+    d = d.split("/", 1)[0].split("?", 1)[0]   # drop path / query
+    d = d.strip().rstrip(".")
+    return d.lower()
+
+
 def cf_headers(email, api_key):
     return {
         "X-Auth-Email": email,
@@ -323,8 +338,14 @@ def main():
         print(f"ERROR: Domain file not found: {DOMAIN_FILE}")
         sys.exit(1)
 
-    domains = [l.strip() for l in DOMAIN_FILE.read_text().splitlines()
-               if l.strip() and not l.strip().startswith("#")]
+    seen, domains = set(), []
+    for line in DOMAIN_FILE.read_text().splitlines():
+        if not line.strip() or line.strip().startswith("#"):
+            continue
+        d = normalize_domain(line)
+        if d and d not in seen:
+            seen.add(d)
+            domains.append(d)
     if not domains:
         print("ERROR: Domain file is empty")
         sys.exit(1)
