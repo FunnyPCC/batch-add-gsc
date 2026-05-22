@@ -1,0 +1,17 @@
+{
+  "name": "funnypcc",
+  "owner": {
+    "name": "FunnyPCC",
+    "url": "https://github.com/FunnyPCC"
+  },
+  "metadata": {
+    "description": "FunnyPCC's Claude Code plugins"
+  },
+  "plugins": [
+    {
+      "name": "batch-add-gsc",
+      "source": "./",
+      "description": "Batch add domains to Google Search Console with automated DNS TXT verification via Cloudflare"
+    }
+  ]
+}
