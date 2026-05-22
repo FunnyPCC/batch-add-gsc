@@ -79,6 +79,23 @@ SCOPES = [
 CF_API = "https://api.cloudflare.com/client/v4"
 
 
+# ── Terminal colors ───────────────────────────────────
+# Auto-disabled when stdout isn't a TTY (piped/redirected) or NO_COLOR is set.
+_USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def _paint(code, text):
+    return f"\033[{code}m{text}\033[0m" if _USE_COLOR else text
+
+
+def green(t):  return _paint("32", t)
+def red(t):    return _paint("31", t)
+def yellow(t): return _paint("33", t)
+def cyan(t):   return _paint("36", t)
+def bold(t):   return _paint("1", t)
+def dim(t):    return _paint("2", t)
+
+
 def get_cf_credentials():
     """
     Get Cloudflare email and Global API Key.
@@ -350,73 +367,80 @@ def main():
         print("ERROR: Domain file is empty")
         sys.exit(1)
 
-    print(f"=== Batch Add to Google Search Console ===")
-    print(f"    {len(domains)} domains to process\n")
+    print(bold("=== Batch Add to Google Search Console ==="))
+    print(dim(f"    {len(domains)} domains to process\n"))
 
     # Credentials
-    print("[1/2] Getting credentials...")
+    print(cyan("[1/2] Getting credentials..."))
     cf_email, cf_api_key = get_cf_credentials()
     creds = google_auth(force_reauth=force_reauth)
 
     # Build API services
-    print("[2/2] Connecting to Google APIs...\n")
+    print(cyan("[2/2] Connecting to Google APIs...\n"))
     sv_service = build("siteVerification", "v1", credentials=creds)
     sc_service = build("searchconsole", "v1", credentials=creds)
 
     ok, failed, no_zone = [], [], []
 
     for i, domain in enumerate(domains, 1):
-        print(f"[{i}/{len(domains)}] {domain}")
+        print(bold(f"[{i}/{len(domains)}] {domain}"))
 
         zone_id = get_cf_zone_id(domain, cf_email, cf_api_key)
         if not zone_id:
-            print(f"  SKIP — not found in Cloudflare")
+            print(yellow("  ⏭️  skip — not found in Cloudflare"))
             no_zone.append(domain)
             continue
 
         try:
             token = get_verification_token(sv_service, domain)
-            print(f"  Token: {token[:50]}...")
+            print(dim(f"  🔑 token   {token[:42]}…"))
         except Exception as e:
-            print(f"  FAIL — get token: {e}")
+            print(red(f"  ❌ get token — {e}"))
             failed.append((domain, str(e)))
             continue
 
         status = write_txt_record(zone_id, domain, token, cf_email, cf_api_key)
-        print(f"  DNS TXT: {status}")
+        print(dim(f"  📝 DNS TXT  {status}"))
 
-        print(f"  Waiting {DNS_WAIT_SECONDS}s for DNS propagation...")
+        print(dim(f"  ⏳ waiting {DNS_WAIT_SECONDS}s for DNS propagation…"))
         time.sleep(DNS_WAIT_SECONDS)
 
         try:
             verify_domain(sv_service, domain)
-            print(f"  Verified!")
+            print(green("  ✅ verified"))
         except Exception as e:
             if "already verified" in str(e).lower():
-                print(f"  Already verified")
+                print(green("  ✅ already verified"))
             else:
-                print(f"  FAIL — verify: {e}")
+                print(red(f"  ❌ verify — {e}"))
                 failed.append((domain, str(e)))
                 continue
 
         if add_to_search_console(sc_service, domain):
-            print(f"  Added to Search Console")
+            print(green("  ✅ added to Search Console"))
             ok.append(domain)
         else:
-            print(f"  WARN — could not add to Search Console")
+            print(yellow("  ⚠️  could not add to Search Console"))
             failed.append((domain, "add to SC failed"))
 
     # Summary
-    print(f"\n{'='*50}")
-    print(f"RESULTS: {len(ok)} ok / {len(failed)} failed / {len(no_zone)} no zone")
+    print("\n" + "═" * 50)
+    print(
+        "RESULTS:  "
+        + green(f"✅ {len(ok)} ok")
+        + "   "
+        + red(f"❌ {len(failed)} failed")
+        + "   "
+        + yellow(f"⏭️  {len(no_zone)} no zone")
+    )
     if failed:
-        print("\nFailed:")
+        print(red("\n❌ Failed:"))
         for d, r in failed:
-            print(f"  {d}: {r}")
+            print(red(f"   {d}: {r}"))
     if no_zone:
-        print("\nNot in Cloudflare:")
+        print(yellow("\n⏭️  Not in Cloudflare:"))
         for d in no_zone:
-            print(f"  {d}")
+            print(yellow(f"   {d}"))
 
 
 if __name__ == "__main__":
